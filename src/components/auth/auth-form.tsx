@@ -3,6 +3,11 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
+import {
+  getPasswordRuleChecks,
+  isValidEmailAddress,
+  passwordMinLength,
+} from "@/src/modules/auth/auth.rules";
 
 type AuthFormProps = {
   mode: "login" | "register";
@@ -13,6 +18,10 @@ type ApiResponse<T> = {
   data?: T;
   error?: {
     message?: string;
+    details?: {
+      fieldErrors?: Record<string, string[]>;
+      formErrors?: string[];
+    };
   };
 };
 
@@ -21,13 +30,62 @@ export function AuthForm({ mode }: AuthFormProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [emailError, setEmailError] = useState<string | null>(null);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [isPasswordTooltipVisible, setIsPasswordTooltipVisible] = useState(false);
+  const [isPasswordFieldFocused, setIsPasswordFieldFocused] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   const isLogin = mode === "login";
+  const passwordChecks = getPasswordRuleChecks(password);
+
+  function validateEmail(value: string) {
+    if (!value.trim()) {
+      return "Email is required.";
+    }
+
+    if (!isValidEmailAddress(value)) {
+      return "Enter a valid email address.";
+    }
+
+    return null;
+  }
+
+  function validatePassword(value: string) {
+    if (!value) {
+      return "Password is required.";
+    }
+
+    if (isLogin) {
+      return null;
+    }
+
+    const failedChecks = getPasswordRuleChecks(value).filter((rule) => !rule.passed);
+
+    if (failedChecks.length === 0) {
+      return null;
+    }
+
+    if (value.length < passwordMinLength) {
+      return `Password must be at least ${passwordMinLength} characters.`;
+    }
+
+    return "Password does not meet the minimum security requirements.";
+  }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
+
+    const nextEmailError = validateEmail(email);
+    const nextPasswordError = validatePassword(password);
+
+    setEmailError(nextEmailError);
+    setPasswordError(nextPasswordError);
+
+    if (nextEmailError || nextPasswordError) {
+      return;
+    }
 
     const response = await fetch(`/api/auth/${mode}`, {
       method: "POST",
@@ -40,6 +98,8 @@ export function AuthForm({ mode }: AuthFormProps) {
     const payload = (await response.json()) as ApiResponse<{ user: { id: string } }>;
 
     if (!response.ok || !payload.success) {
+      setEmailError(payload.error?.details?.fieldErrors?.email?.[0] ?? null);
+      setPasswordError(payload.error?.details?.fieldErrors?.password?.[0] ?? null);
       setError(payload.error?.message ?? "The request could not be completed.");
       return;
     }
@@ -106,28 +166,117 @@ export function AuthForm({ mode }: AuthFormProps) {
             <label className="block space-y-2">
               <span className="text-sm font-medium text-slate-700">Email</span>
               <input
-                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-base outline-none transition focus:border-orange-500 focus:bg-white"
+                className={`w-full rounded-2xl border px-4 py-3 text-base outline-none transition focus:bg-white ${
+                  emailError
+                    ? "border-red-300 bg-red-50 focus:border-red-400"
+                    : "border-slate-200 bg-slate-50 focus:border-orange-500"
+                }`}
                 type="email"
                 autoComplete="email"
                 value={email}
-                onChange={(event) => setEmail(event.target.value)}
+                onChange={(event) => {
+                  const nextValue = event.target.value;
+                  setEmail(nextValue);
+                  setEmailError(validateEmail(nextValue));
+                }}
                 placeholder="you@example.com"
                 required
               />
+              {emailError ? <p className="text-sm text-red-700">{emailError}</p> : null}
             </label>
 
             <label className="block space-y-2">
-              <span className="text-sm font-medium text-slate-700">Password</span>
-              <input
-                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-base outline-none transition focus:border-orange-500 focus:bg-white"
-                type="password"
-                autoComplete={isLogin ? "current-password" : "new-password"}
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                placeholder="At least 8 characters"
-                minLength={8}
-                required
-              />
+              <span className="flex items-center gap-2 text-sm font-medium text-slate-700">
+                <span>Password</span>
+                {!isLogin ? (
+                  <span className="inline-flex">
+                    <button
+                      aria-expanded={isPasswordTooltipVisible || isPasswordFieldFocused}
+                      aria-label="Show password requirements"
+                      className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-slate-300 bg-white text-xs font-bold text-slate-600 transition hover:border-orange-400 hover:text-orange-700"
+                      onBlur={() => {
+                        setTimeout(() => {
+                          if (!isPasswordFieldFocused) {
+                            setIsPasswordTooltipVisible(false);
+                          }
+                        }, 100);
+                      }}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        setIsPasswordTooltipVisible((current) => !current);
+                      }}
+                      onMouseEnter={() => setIsPasswordTooltipVisible(true)}
+                      onMouseLeave={() => setIsPasswordTooltipVisible(false)}
+                      type="button"
+                    >
+                      i
+                    </button>
+                  </span>
+                ) : null}
+              </span>
+              <div className="relative">
+                <input
+                  className={`w-full rounded-2xl border px-4 py-3 text-base outline-none transition focus:bg-white ${
+                    passwordError
+                      ? "border-red-300 bg-red-50 focus:border-red-400"
+                      : "border-slate-200 bg-slate-50 focus:border-orange-500"
+                  }`}
+                  type="password"
+                  autoComplete={isLogin ? "current-password" : "new-password"}
+                  value={password}
+                  onBlur={() => {
+                    setIsPasswordFieldFocused(false);
+                    setIsPasswordTooltipVisible(false);
+                  }}
+                  onChange={(event) => {
+                    const nextValue = event.target.value;
+                    setPassword(nextValue);
+                    setPasswordError(validatePassword(nextValue));
+                  }}
+                  onFocus={() => {
+                    if (!isLogin) {
+                      setIsPasswordFieldFocused(true);
+                      setIsPasswordTooltipVisible(true);
+                    }
+                  }}
+                  placeholder={isLogin ? "Your password" : "At least 8 characters"}
+                  minLength={8}
+                  required
+                />
+
+                {!isLogin && (isPasswordTooltipVisible || isPasswordFieldFocused) ? (
+                  <div className="absolute left-0 top-[calc(100%+0.6rem)] z-20 w-full rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_18px_40px_rgba(15,23,42,0.14)] sm:w-80">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-600">
+                      Password requirements
+                    </p>
+                    <ul className="mt-3 space-y-2">
+                      {passwordChecks.map((rule) => (
+                        <li key={rule.id} className="flex items-center gap-3 text-sm">
+                          <span
+                            className={`inline-flex h-5 w-5 items-center justify-center rounded-full border text-xs font-bold ${
+                              rule.passed
+                                ? "border-emerald-600 bg-emerald-600 text-white"
+                                : "border-slate-300 bg-slate-200 text-slate-500"
+                            }`}
+                          >
+                            {rule.passed ? "✓" : "•"}
+                          </span>
+                          <span
+                            className={
+                              rule.passed ? "text-emerald-700" : "text-slate-600"
+                            }
+                          >
+                            {rule.label}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+              </div>
+              {passwordError ? (
+                <p className="text-sm text-red-700">{passwordError}</p>
+              ) : null}
             </label>
 
             {error ? (

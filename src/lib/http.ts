@@ -1,3 +1,4 @@
+import { ZodError } from "zod";
 import { fail } from "@/src/lib/api/response";
 import { AppError } from "@/src/lib/errors/app-error";
 
@@ -26,6 +27,30 @@ export function createRouteHandler<Context>(
     try {
       return await handler(request, context);
     } catch (error) {
+      if (error instanceof ZodError) {
+        const flattened = error.flatten();
+        const fieldErrors = Object.fromEntries(
+          Object.entries(flattened.fieldErrors).map(([key, value]) => [
+            key,
+            Array.isArray(value) ? value.filter(Boolean) : [],
+          ]),
+        );
+
+        const firstFieldError = Object.values(fieldErrors)
+          .flat()
+          .find((message) => typeof message === "string" && message.length > 0);
+
+        return fail(
+          "VALIDATION_ERROR",
+          firstFieldError ?? flattened.formErrors[0] ?? "The request data is invalid.",
+          400,
+          {
+            formErrors: flattened.formErrors,
+            fieldErrors,
+          },
+        );
+      }
+
       if (error instanceof AppError) {
         return fail(error.code, error.message, error.status, error.details);
       }

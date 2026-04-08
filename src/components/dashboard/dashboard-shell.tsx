@@ -4,11 +4,13 @@ import {
   useEffect,
   useEffectEvent,
   useMemo,
+  useRef,
   useState,
   useTransition,
   useDeferredValue,
 } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import {
   type DashboardData,
   type RoutineDto,
@@ -47,7 +49,9 @@ type TimerState = {
   totalCycles: number;
   completedCycles: number;
   phase: "work" | "short-rest" | "long-rest";
-  secondsLeft: number;
+  phaseDurationSeconds: number;
+  phaseEndsAt: number | null;
+  remainingSeconds: number;
   isRunning: boolean;
 };
 
@@ -132,16 +136,59 @@ function formatSeconds(seconds: number) {
   return `${minutesPart}:${secondsPart}`;
 }
 
+function getPhaseDurationSeconds(routine: RoutineDto, phase: TimerState["phase"]) {
+  if (phase === "work") {
+    return routine.workMinutes * 60;
+  }
+
+  if (phase === "short-rest") {
+    return routine.shortRestMinutes * 60;
+  }
+
+  return routine.longRestMinutes * 60;
+}
+
+function getRemainingSeconds(timer: TimerState) {
+  if (!timer.isRunning || timer.phaseEndsAt === null) {
+    return timer.remainingSeconds;
+  }
+
+  return Math.max(0, Math.ceil((timer.phaseEndsAt - Date.now()) / 1000));
+}
+
+function buildRunningTimerState(
+  baseTimer: Omit<
+    TimerState,
+    "phaseDurationSeconds" | "phaseEndsAt" | "remainingSeconds" | "isRunning"
+  > & {
+    phase: TimerState["phase"];
+  },
+) {
+  const phaseDurationSeconds = getPhaseDurationSeconds(
+    baseTimer.routine,
+    baseTimer.phase,
+  );
+
+  return {
+    ...baseTimer,
+    phaseDurationSeconds,
+    phaseEndsAt: Date.now() + phaseDurationSeconds * 1000,
+    remainingSeconds: phaseDurationSeconds,
+    isRunning: true,
+  } satisfies TimerState;
+}
+
 export function DashboardShell({ initialData }: DashboardShellProps) {
   const router = useRouter();
   const dispatch = useAppDispatch();
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const timerRef = useRef<TimerState | null>(null);
+  const isTimerTransitioningRef = useRef(false);
   const notificationsEnabled = useAppSelector(
     (state) => state.app.notificationsEnabled,
   );
   const activeTimerTaskId = useAppSelector((state) => state.app.activeTimerTaskId);
   const [data, setData] = useState(initialData);
-  const [error, setError] = useState<string | null>(null);
-  const [feedback, setFeedback] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<
     "ALL" | (typeof taskStatusOptions)[number]
@@ -171,6 +218,10 @@ export function DashboardShell({ initialData }: DashboardShellProps) {
   );
   const [timer, setTimer] = useState<TimerState | null>(null);
   const [isPending, startTransition] = useTransition();
+
+  useEffect(() => {
+    timerRef.current = timer;
+  }, [timer]);
 
   async function apiRequest<T>(input: string, init?: RequestInit) {
     const response = await fetch(input, {
@@ -202,10 +253,8 @@ export function DashboardShell({ initialData }: DashboardShellProps) {
       dispatch(setActiveTimerTaskId(null));
     }
 
-    setError(null);
-
     if (successMessage) {
-      setFeedback(successMessage);
+      toast.success(successMessage);
     }
   }
 
@@ -240,22 +289,90 @@ export function DashboardShell({ initialData }: DashboardShellProps) {
   }
 
   async function runMutation(work: () => Promise<void>, successMessage?: string) {
-    setError(null);
-    setFeedback(null);
-
     try {
       await work();
       if (successMessage) {
-        setFeedback(successMessage);
+        toast.success(successMessage);
       }
     } catch (mutationError) {
-      setError(
+      toast.error(
         mutationError instanceof Error
           ? mutationError.message
           : "The operation failed.",
       );
     }
   }
+
+  async function ensureAudioContext() {
+    if (typeof window === "undefined") {
+      return null;
+    }
+
+    const AudioContextConstructor =
+      window.AudioContext ??
+      (
+        window as Window & {
+          webkitAudioContext?: typeof AudioContext;
+        }
+      ).webkitAudioContext;
+
+    if (!AudioContextConstructor) {
+      return null;
+    }
+
+    if (!audioContextRef.current) {
+      audioContextRef.current = new AudioContextConstructor();
+    }
+
+    if (audioContextRef.current.state === "suspended") {
+      await audioContextRef.current.resume();
+    }
+
+    return audioContextRef.current;
+  }
+
+  const playTimerSound = useEffectEvent(
+    async (variant: "transition" | "complete" = "transition") => {
+      const audioContext = await ensureAudioContext();
+
+      if (!audioContext) {
+        return;
+      }
+
+      const startAt = audioContext.currentTime + 0.02;
+      const notePattern =
+        variant === "complete"
+          ? [
+              { frequency: 880, duration: 0.11, offset: 0 },
+              { frequency: 1046, duration: 0.13, offset: 0.18 },
+              { frequency: 1318, duration: 0.18, offset: 0.4 },
+            ]
+          : [
+              { frequency: 880, duration: 0.1, offset: 0 },
+              { frequency: 660, duration: 0.12, offset: 0.16 },
+            ];
+
+      notePattern.forEach((note) => {
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+
+        oscillator.type = "sine";
+        oscillator.frequency.setValueAtTime(note.frequency, startAt + note.offset);
+
+        gainNode.gain.setValueAtTime(0.0001, startAt + note.offset);
+        gainNode.gain.exponentialRampToValueAtTime(0.18, startAt + note.offset + 0.01);
+        gainNode.gain.exponentialRampToValueAtTime(
+          0.0001,
+          startAt + note.offset + note.duration,
+        );
+
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        oscillator.start(startAt + note.offset);
+        oscillator.stop(startAt + note.offset + note.duration + 0.02);
+      });
+    },
+  );
 
   const notify = useEffectEvent((title: string, body: string) => {
     if (!notificationsEnabled || typeof Notification === "undefined") {
@@ -268,84 +385,109 @@ export function DashboardShell({ initialData }: DashboardShellProps) {
   });
 
   const handleTimerElapsed = useEffectEvent(async () => {
-    if (!timer) {
+    const currentTimer = timerRef.current;
+
+    if (!currentTimer || isTimerTransitioningRef.current) {
       return;
     }
 
-    if (timer.phase === "work") {
+    isTimerTransitioningRef.current = true;
+
+    try {
       const nextCompletedCycles = Math.min(
-        timer.completedCycles + 1,
-        timer.totalCycles,
+        currentTimer.completedCycles + (currentTimer.phase === "work" ? 1 : 0),
+        currentTimer.totalCycles,
       );
+      const isFinalWorkCycle =
+        currentTimer.phase === "work" &&
+        nextCompletedCycles >= currentTimer.totalCycles;
 
-      try {
-        await apiRequest(`/api/tasks/${timer.taskId}/plan`, {
-          method: "PUT",
-          body: JSON.stringify({
-            routineId: timer.routine.id,
-            totalCycles: timer.totalCycles,
+      void playTimerSound(isFinalWorkCycle ? "complete" : "transition");
+
+      if (currentTimer.phase === "work") {
+        try {
+          await apiRequest(`/api/tasks/${currentTimer.taskId}/plan`, {
+            method: "PUT",
+            body: JSON.stringify({
+              routineId: currentTimer.routine.id,
+              totalCycles: currentTimer.totalCycles,
+              completedCycles: nextCompletedCycles,
+            }),
+          });
+
+          await refreshDashboard();
+        } catch (mutationError) {
+          toast.error(
+            mutationError instanceof Error
+              ? mutationError.message
+              : "Could not sync plan progress.",
+          );
+        }
+
+        if (nextCompletedCycles >= currentTimer.totalCycles) {
+          notify(
+            "Pomodoro completed",
+            `${currentTimer.taskTitle} reached its target cycles.`,
+          );
+          toast.success(
+            `Task "${currentTimer.taskTitle}" completed all planned cycles.`,
+          );
+          setTimer((latestTimer) =>
+            latestTimer
+              ? {
+                  ...latestTimer,
+                  completedCycles: nextCompletedCycles,
+                  phaseDurationSeconds: latestTimer.routine.workMinutes * 60,
+                  phaseEndsAt: null,
+                  remainingSeconds: latestTimer.routine.workMinutes * 60,
+                  isRunning: false,
+                }
+              : null,
+          );
+          dispatch(setActiveTimerTaskId(null));
+          return;
+        }
+
+        const shouldTakeLongRest =
+          nextCompletedCycles % currentTimer.routine.cyclesBeforeLongRest === 0;
+        const nextPhase = shouldTakeLongRest ? "long-rest" : "short-rest";
+
+        setTimer(
+          buildRunningTimerState({
+            ...currentTimer,
             completedCycles: nextCompletedCycles,
+            phase: nextPhase,
           }),
-        });
-
-        await refreshDashboard();
-      } catch (mutationError) {
-        setError(
-          mutationError instanceof Error
-            ? mutationError.message
-            : "Could not sync plan progress.",
         );
-      }
 
-      if (nextCompletedCycles >= timer.totalCycles) {
-        notify("Pomodoro completed", `${timer.taskTitle} reached its target cycles.`);
-        setFeedback(`Task \"${timer.taskTitle}\" completed all planned cycles.`);
-        setTimer((current) =>
-          current
-            ? {
-                ...current,
-                completedCycles: nextCompletedCycles,
-                isRunning: false,
-                secondsLeft: current.routine.workMinutes * 60,
-              }
-            : null,
+        notify(
+          shouldTakeLongRest ? "Long rest started" : "Short rest started",
+          `${currentTimer.taskTitle} finished a work cycle.`,
         );
-        dispatch(setActiveTimerTaskId(null));
+        toast.info(
+          shouldTakeLongRest
+            ? `Long rest started for "${currentTimer.taskTitle}".`
+            : `Short rest started for "${currentTimer.taskTitle}".`,
+        );
+
         return;
       }
 
-      const shouldTakeLongRest =
-        nextCompletedCycles % timer.routine.cyclesBeforeLongRest === 0;
-      const nextPhase = shouldTakeLongRest ? "long-rest" : "short-rest";
-      const nextSeconds =
-        nextPhase === "long-rest"
-          ? timer.routine.longRestMinutes * 60
-          : timer.routine.shortRestMinutes * 60;
-
-      setTimer({
-        ...timer,
-        completedCycles: nextCompletedCycles,
-        phase: nextPhase,
-        secondsLeft: nextSeconds,
-        isRunning: true,
-      });
-
-      notify(
-        shouldTakeLongRest ? "Long rest started" : "Short rest started",
-        `${timer.taskTitle} finished a work cycle.`,
+      setTimer(
+        buildRunningTimerState({
+          ...currentTimer,
+          phase: "work",
+        }),
       );
 
-      return;
+      notify(
+        "Work session started",
+        `${currentTimer.taskTitle} is back in focus mode.`,
+      );
+      toast.info(`Work session resumed for "${currentTimer.taskTitle}".`);
+    } finally {
+      isTimerTransitioningRef.current = false;
     }
-
-    setTimer({
-      ...timer,
-      phase: "work",
-      secondsLeft: timer.routine.workMinutes * 60,
-      isRunning: true,
-    });
-
-    notify("Work session started", `${timer.taskTitle} is back in focus mode.`);
   });
 
   useEffect(() => {
@@ -353,26 +495,68 @@ export function DashboardShell({ initialData }: DashboardShellProps) {
       return;
     }
 
-    if (timer.secondsLeft <= 0) {
+    const remainingSeconds = getRemainingSeconds(timer);
+
+    if (remainingSeconds <= 0) {
       void handleTimerElapsed();
       return;
     }
+
+    const millisecondsUntilNextBoundary = timer.phaseEndsAt
+      ? Math.max(50, Math.min(timer.phaseEndsAt - Date.now(), 1000))
+      : 1000;
 
     const timeoutId = window.setTimeout(() => {
       setTimer((current) =>
         current
           ? {
               ...current,
-              secondsLeft: current.secondsLeft - 1,
+              remainingSeconds: getRemainingSeconds(current),
             }
           : null,
       );
-    }, 1000);
+    }, millisecondsUntilNextBoundary);
 
     return () => {
       window.clearTimeout(timeoutId);
     };
   }, [timer]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") {
+      return;
+    }
+
+    const handleVisibilityChange = () => {
+      const currentTimer = timerRef.current;
+
+      if (!currentTimer?.isRunning || document.hidden) {
+        return;
+      }
+
+      const remainingSeconds = getRemainingSeconds(currentTimer);
+
+      if (remainingSeconds <= 0) {
+        void handleTimerElapsed();
+        return;
+      }
+
+      setTimer((latestTimer) =>
+        latestTimer
+          ? {
+              ...latestTimer,
+              remainingSeconds,
+            }
+          : latestTimer,
+      );
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, []);
 
   const filteredTasks = useMemo(() => {
     return data.tasks.filter((task) => {
@@ -466,7 +650,7 @@ export function DashboardShell({ initialData }: DashboardShellProps) {
     const content = noteDrafts[taskId]?.trim();
 
     if (!content) {
-      setError("Write a note before saving it.");
+      toast.error("Write a note before saving it.");
       return;
     }
 
@@ -568,12 +752,12 @@ export function DashboardShell({ initialData }: DashboardShellProps) {
       longRestMinutes: routine.longRestMinutes,
       cyclesBeforeLongRest: routine.cyclesBeforeLongRest,
     });
-    setFeedback(`Routine \"${routine.name}\" copied into the creation form.`);
+    toast.info(`Routine "${routine.name}" copied into the creation form.`);
   }
 
   function handleNotificationToggle() {
     if (typeof Notification === "undefined") {
-      setError("Browser notifications are not supported in this environment.");
+      toast.error("Browser notifications are not supported in this environment.");
       return;
     }
 
@@ -581,58 +765,81 @@ export function DashboardShell({ initialData }: DashboardShellProps) {
       void Notification.requestPermission().then((permission) => {
         if (permission === "granted") {
           dispatch(setNotificationsEnabled(true));
-          setFeedback("Notifications enabled.");
+          toast.success("Notifications enabled.");
+          void ensureAudioContext();
           return;
         }
 
-        setError("Notification permission was not granted.");
+        toast.error("Notification permission was not granted.");
       });
 
       return;
     }
 
     dispatch(setNotificationsEnabled(false));
-    setFeedback("Notifications disabled.");
+    toast.info("Notifications disabled.");
   }
 
   function handleTimerStart(task: TaskDto) {
     if (!task.pomodoroPlan) {
-      setError("Attach a pomodoro plan before starting the timer.");
+      toast.error("Attach a pomodoro plan before starting the timer.");
       return;
     }
 
     const { pomodoroPlan } = task;
 
-    setTimer({
-      taskId: task.id,
-      taskTitle: task.title,
-      routine: pomodoroPlan.routine,
-      totalCycles: pomodoroPlan.totalCycles,
-      completedCycles: pomodoroPlan.completedCycles,
-      phase: "work",
-      secondsLeft: pomodoroPlan.routine.workMinutes * 60,
-      isRunning: true,
-    });
+    void ensureAudioContext();
+
+    setTimer(
+      buildRunningTimerState({
+        taskId: task.id,
+        taskTitle: task.title,
+        routine: pomodoroPlan.routine,
+        totalCycles: pomodoroPlan.totalCycles,
+        completedCycles: pomodoroPlan.completedCycles,
+        phase: "work",
+      }),
+    );
 
     dispatch(setActiveTimerTaskId(task.id));
-    setFeedback(`Timer started for \"${task.title}\".`);
+    toast.success(`Timer started for "${task.title}".`);
   }
 
   function handleTimerPauseToggle() {
+    if (!timer) {
+      return;
+    }
+
+    const nextIsRunning = !timer.isRunning;
+
+    if (nextIsRunning) {
+      void ensureAudioContext();
+    }
+
     setTimer((current) =>
       current
         ? {
             ...current,
-            isRunning: !current.isRunning,
+            phaseEndsAt: nextIsRunning
+              ? Date.now() + current.remainingSeconds * 1000
+              : null,
+            remainingSeconds: nextIsRunning
+              ? current.remainingSeconds
+              : getRemainingSeconds(current),
+            isRunning: nextIsRunning,
           }
         : current,
     );
+
+    if (timer) {
+      toast.info(nextIsRunning ? "Timer resumed." : "Timer paused.");
+    }
   }
 
   function handleTimerStop() {
     setTimer(null);
     dispatch(setActiveTimerTaskId(null));
-    setFeedback("Timer stopped.");
+    toast.info("Timer stopped.");
   }
 
   return (
@@ -676,18 +883,6 @@ export function DashboardShell({ initialData }: DashboardShellProps) {
             </div>
           </div>
         </section>
-
-        {error ? (
-          <p className="rounded-3xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-            {error}
-          </p>
-        ) : null}
-
-        {feedback ? (
-          <p className="rounded-3xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-            {feedback}
-          </p>
-        ) : null}
 
         <section className="grid gap-6 xl:grid-cols-[0.95fr_1.45fr]">
           <div className="space-y-6">
@@ -784,7 +979,7 @@ export function DashboardShell({ initialData }: DashboardShellProps) {
                     </p>
                   </div>
                   <p className="text-5xl font-semibold tracking-tight">
-                    {formatSeconds(timer?.secondsLeft ?? 0)}
+                    {formatSeconds(timer ? getRemainingSeconds(timer) : 0)}
                   </p>
                 </div>
                 <p className="mt-4 text-sm text-slate-300">

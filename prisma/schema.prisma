@@ -1,0 +1,90 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  DONE
+  ARCHIVED
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+model User {
+  id               String            @id @default(uuid())
+  email            String            @unique
+  passwordHash     String
+  tasks            Task[]
+  pomodoroRoutines PomodoroRoutine[]
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+}
+
+model Task {
+  id           String         @id @default(uuid())
+  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId       String
+  title        String
+  description  String?
+  status       TaskStatus     @default(TODO)
+  priority     TaskPriority?
+  pomodoroPlan PomodoroPlan?
+  notes        Note[]
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  @@index([userId, status])
+}
+
+model PomodoroRoutine {
+  id                   String         @id @default(uuid())
+  user                 User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userId               String?
+  name                 String
+  workMinutes          Int
+  shortRestMinutes     Int
+  longRestMinutes      Int
+  cyclesBeforeLongRest Int
+  pomodoroPlans        PomodoroPlan[]
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  @@index([userId])
+  @@unique([name, userId])
+}
+
+model PomodoroPlan {
+  id              String          @id @default(uuid())
+  task            Task            @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  taskId          String          @unique
+  routine         PomodoroRoutine @relation(fields: [routineId], references: [id], onDelete: Restrict)
+  routineId       String
+  totalCycles     Int
+  completedCycles Int             @default(0)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@index([routineId])
+}
+
+model Note {
+  id        String   @id @default(uuid())
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  taskId    String
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([taskId, createdAt])
+}

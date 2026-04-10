@@ -1,20 +1,42 @@
-import { RoutineSummaryCard } from "@/src/features/dashboard/components/routine-summary-card";
 import { TaskEditor } from "@/src/features/dashboard/components/task-editor";
 import { TaskNotesCard } from "@/src/features/dashboard/components/task-notes-card";
-import { TaskPlanCard } from "@/src/features/dashboard/components/task-plan-card";
+import { getTaskStatusMeta } from "@/src/features/dashboard/utils/task-meta";
 import type { TaskDto } from "@/src/lib/contracts";
 
-export function TaskCard({ task }: { task: TaskDto }) {
+type TaskCardProps = {
+  task: TaskDto;
+  isExpanded: boolean;
+  onSelect: () => void;
+  onCollapse?: () => void;
+};
+
+export function TaskCard({ task, isExpanded, onSelect, onCollapse }: TaskCardProps) {
+  const statusMeta = getTaskStatusMeta(task.status);
+
   return (
-    <article className="rounded-4xl border border-slate-200 bg-slate-50 p-5">
-      <div className="flex flex-col gap-4 xl:flex-row xl:justify-between">
-        <TaskEditor task={task} />
-        <TaskPlanCard task={task} />
-      </div>
-      <div className="mt-5 grid gap-4 xl:grid-cols-[1fr_1fr]">
-        <TaskNotesCard task={task} />
-        <RoutineSummaryCard task={task} />
-      </div>
+    <article
+      className={`animate-card-enter rounded-4xl border bg-slate-50/90 shadow-[0_10px_30px_rgba(15,23,42,0.05)] transition ${
+        isExpanded
+          ? "border-slate-200 p-4 sm:p-5"
+          : `cursor-pointer border-slate-200 border-l-4 px-4 py-3 hover:bg-white ${statusMeta.cardBorderClassName}`
+      }`}
+      onClick={() => {
+        if (!isExpanded) {
+          onSelect();
+        }
+      }}
+    >
+      <TaskEditor
+        isExpanded={isExpanded}
+        onCollapse={onCollapse}
+        onSelect={onSelect}
+        task={task}
+      />
+      {isExpanded ? (
+        <div className="mt-5">
+          <TaskNotesCard task={task} />
+        </div>
+      ) : null}
     </article>
   );
 }

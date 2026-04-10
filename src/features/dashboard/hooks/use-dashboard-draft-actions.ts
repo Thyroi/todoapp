@@ -20,6 +20,13 @@ export function useDashboardDraftActions(props: DraftActionsProps) {
     }));
   }
 
+  function replaceTaskDraft(taskId: string, nextDraft: TaskDraft) {
+    props.setTaskDrafts((current) => ({
+      ...current,
+      [taskId]: nextDraft,
+    }));
+  }
+
   function setPlanDraft(taskId: string, key: keyof PlanDraft, value: string) {
     props.setPlanDrafts((current) => ({
       ...current,
@@ -44,5 +51,19 @@ export function useDashboardDraftActions(props: DraftActionsProps) {
     }));
   }
 
-  return { setTaskDraft, setPlanDraft, setNoteDraft, setRoutineDraft };
+  function replaceRoutineDraft(routineId: string, nextDraft: RoutineDraft) {
+    props.setRoutineDrafts((current) => ({
+      ...current,
+      [routineId]: nextDraft,
+    }));
+  }
+
+  return {
+    setTaskDraft,
+    replaceTaskDraft,
+    setPlanDraft,
+    setNoteDraft,
+    setRoutineDraft,
+    replaceRoutineDraft,
+  };
 }

@@ -8,7 +8,7 @@ export function RoutineFieldGrid(props: {
   onChange: (key: keyof RoutineDraft, value: string) => void;
 }) {
   return (
-    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+    <div className="grid gap-3 sm:grid-cols-2">
       {routineFieldConfigs.map(({ key, label, inputType }) => (
         <label
           key={key}

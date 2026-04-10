@@ -221,6 +221,421 @@ Con Prettier, ambos terminan en una misma forma consistente.
 
 ---
 
+## Bloque 11: Ayuda contextual y tono consistente en formularios
+
+### Objetivo
+Hacer que el dashboard explique mejor cada campo sin llenar la interfaz de texto permanente.
+
+### Decisión de UX
+En vez de agregar descripciones largas debajo de cada input, se creó una ayuda contextual reutilizable:
+- label claro
+- icono sutil de ayuda
+- tooltip corto con intención operativa
+
+Eso permite que la UI siga limpia, pero sin dejar al usuario adivinando para qué sirve cada campo.
+
+### Dónde vive
+- `src/features/dashboard/components/field-help-icon.tsx`
+- `src/features/dashboard/constants.ts`
+
+### Cómo funciona
+`constants.ts` ahora concentra metadatos de campos para tres grupos:
+- tasks
+- pomodoro plans
+- routines
+
+Cada entrada define:
+- `label`
+- `helpText`
+
+Con eso, los formularios y editores inline pueden renderizar una misma gramática visual sin duplicar textos a mano en cada componente.
+
+### Dónde se aplicó
+- creación de task
+- edición inline de task
+- creación de routine
+- edición inline de routine
+- configuración de pomodoro plan
+- encabezado del timer
+
+### Ajuste final de copy
+En la última pasada también se corrigieron placeholders para que el tono coincida con las ayudas:
+- más directos
+- más operativos
+- menos genéricos
+
+Ejemplos:
+- `Task title` pasó a `Name the task`
+- `Routine name` pasó a `Name the routine`
+- `Search task` pasó a `Search by task title`
+
+### Idea clave del bloque
+Una ayuda buena no compite con la interfaz; aparece justo cuando hace falta y usa el mismo lenguaje que el resto del sistema.
+
+---
+
+## Bloque 3: Reorganización visual del dashboard
+
+### Archivos principales
+- `src/features/dashboard/components/dashboard-view.tsx`
+- `src/features/dashboard/components/dashboard-main.tsx`
+- `src/features/dashboard/components/dashboard-sidebar.tsx`
+
+### Objetivo del cambio
+Separar mejor el contenido principal del dashboard para que la experiencia sea más clara.
+
+La nueva idea base es:
+- el `Header` queda intacto arriba
+- debajo del header aparece una grilla de 2 columnas
+- la columna principal usa proporción `3fr`
+- la columna secundaria usa proporción `1fr`
+
+### Qué vive ahora en cada columna
+
+#### Columna principal `3/4`
+- `TasksSection`
+
+Esta columna queda dedicada a tareas.
+
+Después del cambio de modales, el alta de tareas ya no queda fija dentro de la columna; ahora cuelga del botón `New task` dentro de `TasksSection`.
+
+#### Columna secundaria `1/4`
+- `TimerSection`
+- `RoutinesSection`
+- `CreateRoutineSection`
+
+Esta columna agrupa herramientas de apoyo y presets.
+
+### Por qué mejora el UX
+Antes, la UI mezclaba creación de tareas en un lado y listado de tareas en otro, mientras la lista de rutinas vivía en la columna grande.
+
+Eso hacía que el flujo mental de `crear tarea -> ver tarea -> operar tarea` estuviera partido.
+
+Con esta reorganización:
+- el flujo de tareas queda concentrado en una sola zona principal
+- la columna secundaria funciona como panel de apoyo
+- la jerarquía visual se siente más predecible
+
+### Detalle técnico importante
+La grilla quedó con esta lógica:
+
+```tsx
+<section className="grid items-start gap-6 xl:grid-cols-[minmax(0,3fr)_minmax(0,1fr)]">
+```
+
+Eso significa que:
+- en pantallas pequeñas sigue apilado verticalmente
+- en `xl` pasa a dos columnas con proporción 3 a 1
+
+### Idea clave del bloque
+Una mejora de UX muchas veces no exige rediseñar todo; primero hay que corregir la jerarquía y agrupar por intención de uso.
+
+---
+
+## Bloque 4: Sistema base de modales para tasks y pomodoro plan
+
+### Archivos principales
+- `src/components/ui/modal.tsx`
+- `src/components/ui/tooltip.tsx`
+- `src/features/dashboard/components/tasks-section.tsx`
+- `src/features/dashboard/components/create-task-section.tsx`
+- `src/features/dashboard/components/task-plan-card.tsx`
+
+### Qué problema se corrigió
+Había dos fricciones claras:
+- el formulario de crear task ocupaba espacio permanente dentro de la columna principal
+- cada task mostraba inline el formulario de pomodoro plan, lo que ensuciaba mucho la card
+
+### Nueva decisión de UX
+
+#### Crear task
+El formulario ya no vive fijo en pantalla.
+
+Ahora `TasksSection` tiene un botón cuadrado con `+` que abre un modal.
+
+Ese botón además tiene tooltip con el texto `Create a new task`.
+
+Ventaja:
+- la lista de tasks respira mejor
+- el usuario entra al formulario solo cuando realmente quiere crear una nueva task
+
+#### Asignar pomodoro plan
+Cada card ahora muestra un botón visual de tomate.
+
+Ese botón:
+- tiene tooltip con el texto `Assign pomodoro plan`
+- abre un modal con los mismos campos del plan
+- evita que cada task quede expandida por defecto con más inputs de los necesarios
+
+### Por qué se creó una base reusable
+En vez de meter un modal artesanal dentro de cada componente, se creó una pieza genérica en `src/components/ui/modal.tsx`.
+
+Eso permite reutilizar el mismo patrón después para:
+- editar notas en modal
+- confirmar borrados
+- editar rutinas sin romper la composición actual
+
+### Detalle técnico importante
+Para cerrar el modal solo cuando la operación realmente funciona, `runMutation` ahora devuelve un booleano:
+
+- `true` si la operación terminó bien
+- `false` si falló y ya se mostró un toast de error
+
+Con eso, el modal no se cierra por accidente cuando una request falla.
+
+### Idea clave del bloque
+Mover formularios secundarios a modales no es solo una mejora visual; también reduce ruido cognitivo y devuelve protagonismo a la acción principal de la pantalla.
+
+---
+
+## Bloque 5: Rediseño de la task card
+
+### Archivos principales
+- `src/features/dashboard/components/task-editor.tsx`
+- `src/features/dashboard/components/task-card.tsx`
+- `src/features/dashboard/components/task-plan-card.tsx`
+- `src/features/dashboard/utils/task-meta.ts`
+
+### Problema de UX
+La task card estaba siempre en modo edición completa.
+
+Eso causaba tres problemas:
+- el título y la descripción no se leían como contenido, sino como formulario
+- el estado y la prioridad no tenían jerarquía visual clara
+- las acciones importantes quedaban mezcladas sin una intención evidente
+
+### Nueva estructura
+
+#### Fila principal
+Ahora la card tiene una fila principal compacta, pensada como una sola línea lógica de trabajo.
+
+Sus columnas son:
+- título y descripción
+- estado actual en pill + selector de estado
+- prioridad actual en pill + selector de prioridad
+- botones de interacción
+
+Se eliminaron los recuadros intermedios que estaban metiendo ruido visual.
+
+#### Modo edición
+El botón de lápiz activa la edición del contenido textual.
+
+Cuando eso pasa:
+- `title` se convierte en input completo
+- `description` se convierte en textarea
+- aparecen botones `Save` y `Cancel`
+
+`Cancel` restaura el draft local al estado real de la task.
+
+### Color semántico en pills
+Se creó una pequeña capa de metadatos en `src/features/dashboard/utils/task-meta.ts`.
+
+Eso centraliza:
+- el label legible de cada estado
+- el color visual de cada pill
+- el tono visual del selector asociado
+
+Así la UI mantiene consistencia cuando cambia el estado o la prioridad.
+
+### Acción de borrado
+Se añadió un botón de caneca para eliminar la task directamente desde la card.
+
+Los iconos de edición y borrado ya no viven inline dentro del componente.
+
+Ahora:
+- los SVG viven en `public/icons`
+- los botones usan color por estado visual
+- el icono hereda color y en hover pasa a blanco sobre fondo sólido
+
+Esto reduce ruido dentro de `task-editor.tsx` y deja la lógica visual más limpia.
+
+### Acción de pomodoro
+Ya no existe una sección aparte de pomodoro dentro de la card.
+
+Ahora solo hay un botón en la columna de acciones:
+- si no hay plan, el botón vuelve a mostrarse como tomate con tooltip `Assign pomodoro plan`
+- si ya existe plan, el botón principal pasa a indicar que el timer puede iniciarse desde ahí
+
+La segunda fila queda reservada para `notes`.
+
+Además, la fila de descripción de la task ahora tiene una altura más controlada:
+- en lectura usa una caja visual estable
+- en edición el textarea y la columna de acciones se equilibran mejor
+
+Eso evita que una descripción muy larga deforme demasiado la altura general de la card.
+
+La fila de `notes` sigue la misma idea:
+- lista de notas en una zona estable con scroll interno
+- área de escritura separada y más predecible
+- el borrado de notas también usa icono de caneca en vez de texto plano
+
+Con eso, la card completa cambia menos de altura entre una tarea y otra.
+
+En el pulido final de layout se ajustó además:
+- la fila principal del editor solo se estira a 4 columnas en pantallas muy anchas
+- los botones principales (`Save`, `Cancel`, `Add Note`, `Start timer`) comparten mejor escala visual
+- la card completa ganó un espaciado y una sombra más controlados para sentirse más consistente entre desktop y responsive
+
+Además se añadió una capa de seguridad y feedback:
+- confirmación antes de borrar una task
+- confirmación antes de borrar una note
+- loader visible durante el borrado para que la UI no parezca congelada
+- animación sutil de entrada para modales y task cards
+- selects con aspecto más cercano a celdas operativas que a formularios sueltos
+
+## Bloque 6: Rutinas como workspace propio
+
+### Objetivo
+Las rutinas dejaron de vivir como bloques secundarios en el sidebar.
+
+Ahora tienen un workspace propio que reemplaza la vista de tasks cuando el usuario cambia de contexto desde el dashboard principal.
+
+### Qué cambió
+- `DashboardMain` ahora tiene un switch entre `Tasks` y `Routines`
+- `DashboardSidebar` queda enfocada en el timer
+- la creación de rutinas se mueve a un modal con botón `+`
+- las cards de rutina se rediseñan con un lenguaje visual cercano al de tasks
+
+### Nueva experiencia de rutinas
+- vista dedicada para explorar rutinas
+- botón `+` para crear una nueva rutina
+- cards con resumen rápido de tiempos y ciclos
+- edición explícita con `edit`
+- confirmación y loader al borrar una rutina
+- clonación de presets globales hacia el modal de creación
+
+### Unificación visual de botones
+Las acciones primarias pasan a negro para mantener coherencia con el resto del dashboard.
+
+Eso afecta, entre otras cosas:
+- creación de task
+- guardado de pomodoro plan
+- `Start timer`
+- guardado de rutina
+
+### Idea clave del bloque
+Si tasks y routines son dos unidades de trabajo distintas, no deben competir dentro del mismo lienzo; deben sentirse como workspaces hermanos con la misma gramática visual.
+
+## Bloque 7: Transición de workspace, filtros de rutinas y timer refinado
+
+### Qué se añadió
+- transición visual al cambiar entre `Tasks` y `Routines`
+- filtros `All / Mine / Global` dentro del workspace de rutinas
+- bloque de timer con más jerarquía visual y mejor lectura operacional
+
+### Workspace switch
+El cambio entre workspaces ya no es seco.
+
+Ahora el contenido entra con una animación corta que ayuda a entender que el usuario cambió de contexto, no solo de bloque visual.
+
+### Filtros de rutinas
+Dentro de `Routines` ahora existe un filtro por ownership:
+- `All`
+- `Mine`
+- `Global`
+
+Eso reduce ruido cuando ya existan muchos presets y separa mejor lo editable de lo compartido.
+
+### Timer refinado
+El timer ya no es solo un bloque oscuro con tiempo.
+
+Ahora muestra mejor:
+- tarea activa
+- rutina usada
+- fase actual
+- ciclos completados
+- modo del timer
+
+La intención es que el usuario pueda escanear el estado del foco en segundos.
+
+### Idea clave del bloque
+Una buena UX no solo organiza pantallas; también marca las transiciones entre contextos y reduce el esfuerzo para entender qué puede editarse, qué está activo y qué pertenece al sistema compartido.
+
+## Bloque 8: Timer como entrada a rutinas y task seleccionada arriba
+
+### Cambio estructural
+Se eliminó el selector de workspace como bloque independiente dentro del contenido.
+
+Ahora el dashboard trabaja en una sola columna:
+- timer arriba
+- contenido principal abajo
+
+El acceso a `Routines` nace desde el timer con un botón de configuración. Eso hace que la navegación se sienta más natural: primero veo el motor de foco, luego configuro sus presets.
+
+### Tasks como lista compacta + detalle activo
+La sección de tasks dejó de mostrar descripción y notas en todas las cards al mismo tiempo.
+
+Ahora funciona así:
+- la lista normal queda compacta
+- cada row muestra lo esencial
+- cuando seleccionas una task, aparece arriba desplegada
+- solo esa task muestra descripción y notas
+
+Esto no es un acordeón clásico, porque el detalle no vive exactamente adentro de la fila; vive arriba como contexto activo.
+
+### Borde por status en tasks colapsadas
+Las tasks colapsadas ahora usan el borde izquierdo para comunicar estado.
+
+Eso permite escanear la lista rápido sin abrir cada card.
+
+### Ajuste en rutinas
+Cuando entras a `Routines`, el botón secundario ya no refresca; ahora devuelve a `Tasks`, porque ese flujo encaja mejor con el nuevo modelo de navegación.
+
+### Idea clave del bloque
+Si solo una task necesita atención profunda a la vez, la interfaz debe tratarla como contexto activo y dejar el resto como lista operativa de baja fricción.
+
+## Bloque 9: Refactor por lectura y jerarquía de componentes
+
+### Problema
+Varios componentes del dashboard habían crecido demasiado y ya costaba responder preguntas básicas como:
+- cuál es el padre real
+- dónde empieza el header visual
+- dónde viven las acciones
+- qué bloque pertenece al modal y cuál al contenido
+
+### Decisión
+Se partieron los componentes grandes en piezas más pequeñas y con responsabilidad única.
+
+Ejemplos:
+- `task-editor` ahora delega en header, body y delete modal
+- `routine-card` ahora delega en header, métricas, editor y delete modal
+- `routines-workspace` separa header y filtro
+- `timer-panel` separa chips de estado, bloque de sesión y métricas
+
+### Beneficio
+Ahora la lectura del árbol visual coincide mucho mejor con el árbol real de componentes.
+
+Eso reduce el costo de mantenimiento y hace más rápido entender qué pieza tocar cuando cambie el diseño.
+
+### Idea clave del bloque
+Cuando un componente ya no cabe cómodamente en la cabeza, dejó de ser un componente y pasó a ser un contenedor de varios problemas distintos.
+
+## Bloque 10: Rutinas sin clonado y con acciones al final
+
+### Cambio funcional
+Se eliminó la lógica de clonar rutinas desde presets globales.
+
+La razón es simple: el flujo aportaba poco valor y añadía ruido mental, tanto en la interfaz como en la arquitectura.
+
+### Cambio visual
+La card de rutina volvió a un orden más claro:
+- identidad de la rutina
+- métricas
+- action buttons al final
+
+Eso mejora el escaneo porque primero lees la información y luego decides si ejecutar una acción.
+
+### Limpieza interna
+También se eliminó la lógica muerta de clone en el dominio de rutinas para que el controller no siga exponiendo acciones que ya no existen en la UX.
+
+### Idea clave del bloque
+Si una acción no aporta suficiente valor real al flujo, termina costando más en complejidad estructural de lo que devuelve en utilidad.
+
+### Idea clave del bloque
+Una task card operativa no necesita subpaneles para cada cosa; necesita una fila principal clara con acciones directas y una fila secundaria solo para información auxiliar.
+
+---
+
 ### `.prettierignore`
 
 #### Archivo

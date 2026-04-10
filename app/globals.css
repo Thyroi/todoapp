@@ -40,3 +40,65 @@ a {
 ::selection {
   background: rgba(234, 88, 12, 0.18);
 }
+
+@keyframes modal-backdrop-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes modal-surface-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes card-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes workspace-swap {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-modal-backdrop {
+  animation: modal-backdrop-in 180ms ease-out;
+}
+
+.animate-modal-surface {
+  animation: modal-surface-in 220ms ease-out;
+}
+
+.animate-card-enter {
+  animation: card-enter 240ms ease-out;
+}
+
+.animate-workspace-swap {
+  animation: workspace-swap 220ms ease-out;
+}

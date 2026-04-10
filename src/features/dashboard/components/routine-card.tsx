@@ -1,42 +1,45 @@
-import { RoutineCardActions } from "@/src/features/dashboard/components/routine-card-actions";
-import { RoutineFieldGrid } from "@/src/features/dashboard/components/routine-field-grid";
-import { useDashboard } from "@/src/features/dashboard/context";
+import { RoutineCardContent } from "@/src/features/dashboard/components/routine-card-content";
+import { useRoutineCardState } from "@/src/features/dashboard/hooks/use-routine-card-state";
 import type { RoutineDto } from "@/src/lib/contracts";
 
-export function RoutineCard({ routine }: { routine: RoutineDto }) {
-  const { state, actions } = useDashboard();
-  const draft = state.routineDrafts[routine.id];
+type RoutineCardProps = {
+  routine: RoutineDto;
+};
+
+export function RoutineCard({ routine }: RoutineCardProps) {
+  const {
+    draft,
+    handleCancelEdit,
+    handleDelete,
+    handleFieldChange,
+    handleNameChange,
+    handleSave,
+    isDeletingRoutine,
+    isDeleteModalOpen,
+    isEditing,
+    name,
+    setIsDeleteModalOpen,
+    setIsEditing,
+  } = useRoutineCardState(routine);
 
   return (
-    <article className="rounded-4xl border border-slate-200 bg-slate-50 p-4">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-            {routine.isGlobal ? "Global preset" : "My routine"}
-          </p>
-          <h3 className="mt-1 text-lg font-semibold">{routine.name}</h3>
-        </div>
-        {routine.isGlobal ? (
-          <button
-            className="rounded-full bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-orange-700 shadow-sm"
-            onClick={() => actions.cloneRoutineIntoForm(routine)}
-            type="button"
-          >
-            Clone
-          </button>
-        ) : null}
-      </div>
-      <RoutineFieldGrid
-        routine={routine}
+    <article className="animate-card-enter rounded-4xl border border-slate-200 bg-slate-50/90 p-4 shadow-[0_10px_30px_rgba(15,23,42,0.05)] sm:p-5">
+      <RoutineCardContent
         draft={draft}
-        onChange={(key, value) => actions.setRoutineDraft(routine.id, key, value)}
+        isDeleteModalOpen={isDeleteModalOpen}
+        isDeletingRoutine={isDeletingRoutine}
+        isEditing={isEditing}
+        name={name}
+        onCancel={handleCancelEdit}
+        onDeleteClose={() => setIsDeleteModalOpen(false)}
+        onDeleteConfirm={() => void handleDelete()}
+        onDeleteOpen={() => setIsDeleteModalOpen(true)}
+        onEdit={() => setIsEditing(true)}
+        onFieldChange={handleFieldChange}
+        onNameChange={handleNameChange}
+        onSave={() => void handleSave()}
+        routine={routine}
       />
-      {!routine.isGlobal ? (
-        <RoutineCardActions
-          onSave={() => void actions.handleRoutineSave(routine.id)}
-          onDelete={() => void actions.handleRoutineDelete(routine.id)}
-        />
-      ) : null}
     </article>
   );
 }

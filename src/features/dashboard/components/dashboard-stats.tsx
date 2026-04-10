@@ -14,7 +14,7 @@ export function DashboardStats() {
       {stats.map(([label, value]) => (
         <article
           key={label}
-          className="rounded-3xl border border-slate-900/10 bg-slate-950 px-4 py-3 text-white"
+          className="flex flex-col justify-between rounded-3xl border border-slate-900/10 bg-slate-950 px-4 py-3 text-white"
         >
           <p className="text-xs uppercase tracking-[0.18em] text-slate-300">{label}</p>
           <p className="mt-2 text-2xl font-semibold">{value}</p>

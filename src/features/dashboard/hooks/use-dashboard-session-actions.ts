@@ -3,7 +3,7 @@ import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 
 export function useDashboardSessionActions(
-  runMutation: (work: () => Promise<void>) => Promise<void>,
+  runMutation: (work: () => Promise<void>) => Promise<boolean>,
 ) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();

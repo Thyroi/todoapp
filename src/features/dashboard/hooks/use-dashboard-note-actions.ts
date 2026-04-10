@@ -6,7 +6,7 @@ type NoteActionsProps = {
   noteDrafts: Record<string, string>;
   setNoteDrafts: Dispatch<SetStateAction<Record<string, string>>>;
   refreshDashboard: (successMessage?: string) => Promise<void>;
-  runMutation: (work: () => Promise<void>) => Promise<void>;
+  runMutation: (work: () => Promise<void>) => Promise<boolean>;
 };
 
 export function useDashboardNoteActions(props: NoteActionsProps) {
@@ -25,7 +25,7 @@ export function useDashboardNoteActions(props: NoteActionsProps) {
   }
 
   async function handleNoteDelete(taskId: string, noteId: string) {
-    await props.runMutation(async () => {
+    return props.runMutation(async () => {
       await apiRequest(`/api/tasks/${taskId}/notes/${noteId}`, { method: "DELETE" });
       await props.refreshDashboard("Note deleted.");
     });

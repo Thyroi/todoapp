@@ -5,15 +5,15 @@ export function TaskFilters() {
   const { state, actions } = useDashboard();
 
   return (
-    <div className="flex flex-col gap-3 sm:flex-row">
+    <div className="flex w-full items-center gap-3 lg:w-auto">
       <input
-        className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none focus:border-orange-500 focus:bg-white"
-        placeholder="Search task"
+        className="min-w-0 flex-1 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none focus:border-orange-500 focus:bg-white lg:w-72 lg:flex-none"
+        placeholder="Search by task title"
         value={state.search}
         onChange={(event) => actions.setSearch(event.target.value)}
       />
       <select
-        className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none focus:border-orange-500 focus:bg-white"
+        className="w-auto min-w-0 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none focus:border-orange-500 focus:bg-white"
         value={state.statusFilter}
         onChange={(event) =>
           actions.setStatusFilter(event.target.value as typeof state.statusFilter)

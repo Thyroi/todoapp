@@ -8,14 +8,14 @@ type TaskActionsProps = {
   setNewTask: Dispatch<SetStateAction<NewTaskDraft>>;
   taskDrafts: Record<string, TaskDraft>;
   refreshDashboard: (successMessage?: string) => Promise<void>;
-  runMutation: (work: () => Promise<void>) => Promise<void>;
+  runMutation: (work: () => Promise<void>) => Promise<boolean>;
   stopTimerForTask: (taskId: string) => void;
 };
 
 export function useDashboardTaskActions(props: TaskActionsProps) {
   async function handleCreateTask(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    await props.runMutation(async () => {
+    return props.runMutation(async () => {
       await apiRequest("/api/tasks", {
         method: "POST",
         body: JSON.stringify({
@@ -28,7 +28,7 @@ export function useDashboardTaskActions(props: TaskActionsProps) {
     });
   }
   async function handleTaskSave(taskId: string) {
-    await props.runMutation(async () => {
+    return props.runMutation(async () => {
       const draft = props.taskDrafts[taskId];
       await apiRequest(`/api/tasks/${taskId}`, {
         method: "PATCH",
@@ -38,7 +38,7 @@ export function useDashboardTaskActions(props: TaskActionsProps) {
     });
   }
   async function handleTaskDelete(taskId: string) {
-    await props.runMutation(async () => {
+    return props.runMutation(async () => {
       await apiRequest(`/api/tasks/${taskId}`, { method: "DELETE" });
       props.stopTimerForTask(taskId);
       await props.refreshDashboard("Task deleted.");
